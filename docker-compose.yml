@@ -1,1 +1,71 @@
-# Documento a rellenar
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: vigilant-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vigilant}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vigilant_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-vigilant_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - vigilant-net
+    restart: always
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: vigilant-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    networks:
+      - vigilant-net
+    restart: always
+
+  fastapi-backend:
+    build: .
+    container_name: vigilant-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src:/app/src
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://vigilant:vigilant_pass@postgres:5432/vigilant_db
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - PYTHONUNBUFFERED=1
+    command: uvicorn vigilant.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      - postgres
+      - ollama
+    networks:
+      - vigilant-net
+    restart: always
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: vigilant-ui
+    ports:
+      - "3000:8080"
+    environment:
+      - OPENAI_API_BASE_URL=http://fastapi-backend:8000/v1
+      - OPENAI_API_KEY=not-needed
+      - ENABLE_OLLAMA_API=false
+    volumes:
+      - open-webui-data:/app/backend/data
+    depends_on:
+      - fastapi-backend
+    networks:
+      - vigilant-net
+    restart: always
+
+networks:
+  vigilant-net:
+    driver: bridge
+
+volumes:
+  pgdata:
+  ollama-models:
+  open-webui-data:
