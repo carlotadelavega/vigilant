@@ -28,9 +28,31 @@ Open WebUI (dev-only) --> vigilant-backend (FastAPI) --> Hermes Agent --> Ollama
 uv lock          # generate/refresh uv.lock (requires network access)
 uv sync
 make up           # core stack: ollama + hermes + vigilant-backend
+make ollama-model # list Ollama models and pull qwen2.5:14b if none are installed
 make up-ui         # core stack + temporary Open WebUI dev frontend, on :3000
 make test
 make lint
+```
+
+### Ollama models
+
+List the models installed in the Ollama container:
+
+```bash
+docker exec -it vigilant-ollama ollama list
+```
+
+If the list is empty, download a model by replacing `<nombre-modelo>` as needed:
+
+```bash
+docker exec -it vigilant-ollama ollama pull <nombre-modelo>
+```
+
+The `make ollama-model` target uses `qwen2.5:14b` by default. To select another
+model, pass `OLLAMA_MODEL`:
+
+```bash
+make ollama-model OLLAMA_MODEL=<nombre-modelo>
 ```
 
 ## Project layout
