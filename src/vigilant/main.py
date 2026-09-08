@@ -8,10 +8,19 @@ from vigilant.config import settings
 from vigilant.mcp.server import mcp
 
 
+def _mcp_session_manager_started() -> bool:
+    """Return whether MCP's session manager has already been started.
+
+    MCP does not currently expose this state through a public API. Keep this
+    workaround isolated so it is easy to revisit when upgrading the SDK.
+    """
+    return mcp.session_manager._has_started
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Start the MCP session manager alongside the FastAPI app lifecycle."""
-    if mcp.session_manager._has_started:
+    if _mcp_session_manager_started():
         yield
         return
 

@@ -36,12 +36,10 @@ class FakeStream:
 
 
 class FakeAsyncClient:
-    response = FakeResponse({})
-    stream_response = FakeResponse({})
-    requests: list[tuple[str, str, dict[str, Any]]] = []
-
     def __init__(self, **_kwargs: Any) -> None:
-        pass
+        self.response = FakeResponse({})
+        self.stream_response = FakeResponse({})
+        self.requests: list[tuple[str, str, dict[str, Any]]] = []
 
     async def __aenter__(self) -> "FakeAsyncClient":
         return self
@@ -63,33 +61,34 @@ class FakeAsyncClient:
 
 
 @pytest.fixture(autouse=True)
-def fake_http_client(monkeypatch: pytest.MonkeyPatch) -> None:
-    FakeAsyncClient.requests = []
-    monkeypatch.setattr(hermes_module.httpx, "AsyncClient", FakeAsyncClient)
+def fake_http_client(monkeypatch: pytest.MonkeyPatch) -> FakeAsyncClient:
+    client = FakeAsyncClient()
+    monkeypatch.setattr(hermes_module.httpx, "AsyncClient", lambda **_kwargs: client)
+    return client
 
 
 @pytest.mark.asyncio
-async def test_list_models_returns_data_and_headers() -> None:
-    FakeAsyncClient.response = FakeResponse({"data": [{"id": "hermes"}]})
+async def test_list_models_returns_data_and_headers(fake_http_client: FakeAsyncClient) -> None:
+    fake_http_client.response = FakeResponse({"data": [{"id": "hermes"}]})
     client = HermesClient("http://hermes/v1", "secret")
 
     result = await client.list_models()
 
     assert result == [{"id": "hermes"}]
-    assert FakeAsyncClient.requests == [
+    assert fake_http_client.requests == [
         ("GET", "http://hermes/v1/models", {"headers": {"Authorization": "Bearer secret"}})
     ]
 
 
 @pytest.mark.asyncio
-async def test_chat_completion_returns_response() -> None:
-    FakeAsyncClient.response = FakeResponse({"id": "completion"})
+async def test_chat_completion_returns_response(fake_http_client: FakeAsyncClient) -> None:
+    fake_http_client.response = FakeResponse({"id": "completion"})
     client = HermesClient("http://hermes/v1", "secret")
 
     result = await client.chat_completion([{"role": "user", "content": "hi"}], "hermes")
 
     assert result == {"id": "completion"}
-    assert FakeAsyncClient.requests[0][2]["json"] == {
+    assert fake_http_client.requests[0][2]["json"] == {
         "model": "hermes",
         "messages": [{"role": "user", "content": "hi"}],
         "stream": False,
@@ -97,8 +96,8 @@ async def test_chat_completion_returns_response() -> None:
 
 
 @pytest.mark.asyncio
-async def test_chat_completion_stream_decodes_sse_and_stops_at_done() -> None:
-    FakeAsyncClient.stream_response = FakeResponse(
+async def test_chat_completion_stream_decodes_sse_and_stops_at_done(fake_http_client: FakeAsyncClient) -> None:
+    fake_http_client.stream_response = FakeResponse(
         {}, ["comment", 'data: {"id": "one"}', "data: [DONE]", 'data: {"id": "ignored"}']
     )
     client = HermesClient("http://hermes/v1", "secret")
@@ -109,8 +108,8 @@ async def test_chat_completion_stream_decodes_sse_and_stops_at_done() -> None:
 
 
 @pytest.mark.asyncio
-async def test_chat_completion_stream_raises_for_malformed_sse() -> None:
-    FakeAsyncClient.stream_response = FakeResponse({}, ["data: not-json"])
+async def test_chat_completion_stream_raises_for_malformed_sse(fake_http_client: FakeAsyncClient) -> None:
+    fake_http_client.stream_response = FakeResponse({}, ["data: not-json"])
     client = HermesClient("http://hermes/v1", "secret")
 
     with pytest.raises(HermesClientError, match="Malformed SSE chunk"):
@@ -118,25 +117,25 @@ async def test_chat_completion_stream_raises_for_malformed_sse() -> None:
 
 
 @pytest.mark.asyncio
-async def test_chat_completion_stream_sends_stream_request() -> None:
-    FakeAsyncClient.stream_response = FakeResponse({}, [])
+async def test_chat_completion_stream_sends_stream_request(fake_http_client: FakeAsyncClient) -> None:
+    fake_http_client.stream_response = FakeResponse({}, [])
     client = HermesClient("http://hermes/v1", "secret")
 
     _ = [chunk async for chunk in client.chat_completion_stream([], "hermes")]
 
-    assert FakeAsyncClient.requests[0][2]["json"]["stream"] is True
-    assert FakeAsyncClient.requests[0][0] == "POST"
+    assert fake_http_client.requests[0][2]["json"]["stream"] is True
+    assert fake_http_client.requests[0][0] == "POST"
 
 
 @pytest.mark.asyncio
-async def test_http_error_is_propagated() -> None:
+async def test_http_error_is_propagated(fake_http_client: FakeAsyncClient) -> None:
     class ErrorResponse(FakeResponse):
         def raise_for_status(self) -> None:
             raise httpx.HTTPStatusError(
                 "bad", request=httpx.Request("GET", "http://hermes"), response=httpx.Response(500)
             )
 
-    FakeAsyncClient.response = ErrorResponse({})
+    fake_http_client.response = ErrorResponse({})
 
     with pytest.raises(httpx.HTTPStatusError):
         await HermesClient("http://hermes/v1").list_models()

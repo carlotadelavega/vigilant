@@ -12,7 +12,6 @@ class Settings(BaseSettings):
 
     hermes_base_url: str = "http://localhost:8642/v1"
     hermes_api_key: str = "change-me"
-    ollama_base_url: str = "http://localhost:11434"
     default_llm_model: str = "llama3.1"
 
     model_config = SettingsConfigDict(

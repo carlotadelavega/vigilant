@@ -9,18 +9,15 @@ def test_settings_defaults() -> None:
 
     assert settings.project_name == "VIGILANT"
     assert settings.api_v1_prefix == "/v1"
-    assert settings.ollama_base_url == "http://localhost:11434"
     assert settings.default_llm_model == "llama3.1"
 
 
 def test_settings_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     """Environment variables should override the default settings values."""
-    monkeypatch.setenv("OLLAMA_BASE_URL", "http://ollama:11434")
     monkeypatch.setenv("DEFAULT_LLM_MODEL", "mistral")
 
     settings = Settings()
 
-    assert settings.ollama_base_url == "http://ollama:11434"
     assert settings.default_llm_model == "mistral"
 
 
