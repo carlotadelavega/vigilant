@@ -1,1 +1,56 @@
-# Documento a rellenar
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: vigilant-ollama
+    ports:
+      - "11435:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    networks:
+      - vigilant-net
+    restart: always
+
+  hermes:
+    image: nousresearch/hermes-agent:latest
+    container_name: vigilant-hermes
+    command: gateway run
+    ports:
+      - "8642:8642"
+      - "9119:9119"
+    environment:
+      - API_SERVER_ENABLED=true
+      - API_SERVER_HOST=0.0.0.0
+      - API_SERVER_KEY=${HERMES_API_SERVER_KEY:-change-me}
+    volumes:
+      - hermes-data:/opt/data
+      - ./hermes/config.yaml:/opt/data/config.yaml
+    depends_on:
+      - ollama
+      - vigilant-backend
+    networks:
+      - vigilant-net
+    restart: always
+
+  vigilant-backend:
+    build: .
+    container_name: vigilant-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src:/app/src
+    environment:
+      - HERMES_BASE_URL=http://hermes:8642/v1
+      - HERMES_API_KEY=${HERMES_API_SERVER_KEY:-change-me}
+      - PYTHONUNBUFFERED=1
+    command: uvicorn vigilant.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - vigilant-net
+    restart: always
+
+networks:
+  vigilant-net:
+    driver: bridge
+
+volumes:
+  ollama-models:
+  hermes-data:

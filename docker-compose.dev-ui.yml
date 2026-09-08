@@ -1,0 +1,24 @@
+# TEMPORARY dev frontend — NOT the target UI. Talks to VIGILANT's FastAPI
+# backend (OpenAI-compatible proxy to Hermes), matching VIG-97/98/105.
+# The real frontend (Next.js, per architecture diagram) will sit behind an
+# API Gateway & Auth layer (JWT/TLS, WSS streaming, approval console) that
+# does not exist yet — likely also fronted by vigilant-backend, or a
+# successor to it.
+#
+#
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev-ui.yml up
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: vigilant-ui-dev
+    ports:
+      - "3000:8080"
+    environment:
+      - OPENAI_API_BASE_URL=http://vigilant-backend:8000/v1
+      - OPENAI_API_KEY=not-needed
+      - ENABLE_OLLAMA_API=false
+    depends_on:
+      - vigilant-backend
+    networks:
+      - vigilant-net
+    restart: always
