@@ -1,20 +1,17 @@
-"""OpenAI-compatible chat completion endpoints backed by the VIGILANT LLM service."""
-
 import json
 import time
 from collections.abc import AsyncGenerator
 from typing import Literal
 
-import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from vigilant.config import settings
-from vigilant.services.llm_service import LLMService
+from vigilant.services.hermes_client import HermesClient
 
 router = APIRouter()
-llm_service = LLMService()
+hermes_client = HermesClient()
 
 
 class ChatMessage(BaseModel):
@@ -48,53 +45,22 @@ class ModelList(BaseModel):
     data: list[ModelInfo]
 
 
-class ChatMessageResponse(BaseModel):
-    """Assistant message returned in a non-streaming chat completion."""
-
-    role: Literal["assistant"] = "assistant"
-    content: str
-
-
-class ChatCompletionChoice(BaseModel):
-    """A single completion choice."""
-
-    index: int
-    message: ChatMessageResponse
-    finish_reason: str
-
-
-class ChatCompletionResponse(BaseModel):
-    """OpenAI-compatible non-streaming chat completion response."""
-
-    id: str
-    object: Literal["chat.completion"] = "chat.completion"
-    created: int
-    model: str
-    choices: list[ChatCompletionChoice]
-
-
 @router.get("/models")
 async def list_models() -> ModelList:
-    """Fetch available models dynamically from the local Ollama instance."""
+    """Fetch available models dynamically from Hermes."""
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(f"{settings.ollama_base_url}/api/tags")
-            if response.status_code != 200:
-                raise HTTPException(status_code=502, detail="Failed to fetch models from Ollama")
-
-            ollama_data = response.json()
-
-            models_list: list[ModelInfo] = [
+        hermes_models = await hermes_client.list_models()
+        return ModelList(
+            data=[
                 ModelInfo(
-                    id=model["name"],
-                    created=int(time.time()),
-                    owned_by="ollama",
+                    id=model["id"],
+                    created=model.get("created", int(time.time())),
+                    owned_by="hermes",
                 )
-                for model in ollama_data.get("models", [])
+                for model in hermes_models
             ]
-
-            return ModelList(data=models_list)
-    except httpx.RequestError:
+        )
+    except Exception:  # noqa: BLE001 - Hermes unavailable falls back to a single default entry.
         return ModelList(
             data=[
                 ModelInfo(
@@ -106,61 +72,33 @@ async def list_models() -> ModelList:
         )
 
 
-async def vigilant_agent_stream(user_prompt: str, model_name: str) -> AsyncGenerator[str, None]:
-    """Stream real token responses from the VIGILANT LLM service using Server-Sent Events.
+async def hermes_stream_to_openai_sse(messages: list[dict[str, str]], model_name: str) -> AsyncGenerator[str, None]:
+    """Relay Hermes's streamed chat completion chunks to the client as SSE.
 
     Args:
-        user_prompt: The last user message content to send to the LLM.
-        model_name: The model requested by the client, echoed back in each chunk
-            and forwarded to the underlying Ollama call.
+        messages: OpenAI-format message list forwarded from the client request.
+        model_name: The model requested by the client, forwarded to Hermes.
     """
-    request_id = f"chatcmpl-{int(time.time())}"
-    created_time = int(time.time())
-
-    async for token in llm_service.generate_stream(user_prompt, model=model_name):
-        chunk = {
-            "id": request_id,
-            "object": "chat.completion.chunk",
-            "created": created_time,
-            "model": model_name,
-            "choices": [{"index": 0, "delta": {"content": token}, "finish_reason": None}],
-        }
+    async for chunk in hermes_client.chat_completion_stream(messages, model=model_name):
         yield f"data: {json.dumps(chunk)}\n\n"
-
-    final_chunk = {
-        "id": request_id,
-        "object": "chat.completion.chunk",
-        "created": created_time,
-        "model": model_name,
-        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-    }
-    yield f"data: {json.dumps(final_chunk)}\n\n"
     yield "data: [DONE]\n\n"
 
 
 @router.post("/chat/completions", response_model=None)
-async def chat_completions(request: ChatCompletionRequest) -> StreamingResponse | ChatCompletionResponse:
-    """Handle chat completion requests using the real VIGILANT agent pipeline."""
+async def chat_completions(request: ChatCompletionRequest) -> StreamingResponse | dict[str, object]:
+    """Handle chat completion requests by proxying them to Hermes."""
     if not request.messages:
         raise HTTPException(status_code=400, detail="No messages provided.")
 
-    last_user_message = request.messages[-1].content
+    messages = [message.model_dump() for message in request.messages]
 
     if request.stream:
         return StreamingResponse(
-            vigilant_agent_stream(last_user_message, request.model),
+            hermes_stream_to_openai_sse(messages, request.model),
             media_type="text/event-stream",
         )
 
-    return ChatCompletionResponse(
-        id=f"chatcmpl-{int(time.time())}",
-        created=int(time.time()),
-        model=request.model,
-        choices=[
-            ChatCompletionChoice(
-                index=0,
-                message=ChatMessageResponse(content="[VIGILANT]: Please enable streaming in Open WebUI."),
-                finish_reason="stop",
-            )
-        ],
-    )
+    try:
+        return await hermes_client.chat_completion(messages, model=request.model)
+    except Exception as exc:  # noqa: BLE001 - surfaced as a clean 502 to the client.
+        raise HTTPException(status_code=502, detail="Failed to reach Hermes.") from exc

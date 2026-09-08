@@ -1,5 +1,3 @@
-"""Unit tests for the vigilant.main FastAPI application entrypoint."""
-
 from fastapi.testclient import TestClient
 
 from vigilant.config import settings
@@ -20,7 +18,14 @@ def test_health_endpoint(client: TestClient) -> None:
 
 
 def test_api_router_is_mounted(client: TestClient) -> None:
-    """The chat router should be reachable under the /v1 prefix once mounted on app."""
+    """The chat router should be reachable under /v1 once mounted on app."""
     response = client.get("/v1/models")
 
     assert response.status_code == 200
+
+
+def test_mcp_server_is_mounted(client: TestClient) -> None:
+    """The MCP streamable-http app should be reachable under /mcp once mounted on app."""
+    response = client.get("/mcp")
+
+    assert response.status_code != 404

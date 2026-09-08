@@ -1,19 +1,4 @@
 services:
-  postgres:
-    image: pgvector/pgvector:pg16
-    container_name: vigilant-postgres
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-vigilant}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vigilant_pass}
-      POSTGRES_DB: ${POSTGRES_DB:-vigilant_db}
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    networks:
-      - vigilant-net
-    restart: always
-
   ollama:
     image: ollama/ollama:latest
     container_name: vigilant-ollama
@@ -25,7 +10,28 @@ services:
       - vigilant-net
     restart: always
 
-  fastapi-backend:
+  hermes:
+    image: nousresearch/hermes-agent:latest
+    container_name: vigilant-hermes
+    command: gateway run
+    ports:
+      - "8642:8642"
+      - "9119:9119"
+    environment:
+      - API_SERVER_ENABLED=true
+      - API_SERVER_HOST=0.0.0.0
+      - API_SERVER_KEY=${HERMES_API_SERVER_KEY:-change-me}
+    volumes:
+      - hermes-data:/opt/data
+      - ./hermes/config.yaml:/opt/data/config.yaml:ro
+    depends_on:
+      - ollama
+      - vigilant-backend
+    networks:
+      - vigilant-net
+    restart: always
+
+  vigilant-backend:
     build: .
     container_name: vigilant-backend
     ports:
@@ -33,30 +39,10 @@ services:
     volumes:
       - ./src:/app/src
     environment:
-      - DATABASE_URL=postgresql+asyncpg://vigilant:vigilant_pass@postgres:5432/vigilant_db
-      - OLLAMA_BASE_URL=http://ollama:11434
+      - HERMES_BASE_URL=http://hermes:8642/v1
+      - HERMES_API_KEY=${HERMES_API_SERVER_KEY:-change-me}
       - PYTHONUNBUFFERED=1
     command: uvicorn vigilant.main:app --host 0.0.0.0 --port 8000 --reload
-    depends_on:
-      - postgres
-      - ollama
-    networks:
-      - vigilant-net
-    restart: always
-
-  open-webui:
-    image: ghcr.io/open-webui/open-webui:main
-    container_name: vigilant-ui
-    ports:
-      - "3000:8080"
-    environment:
-      - OPENAI_API_BASE_URL=http://fastapi-backend:8000/v1
-      - OPENAI_API_KEY=not-needed
-      - ENABLE_OLLAMA_API=false
-    volumes:
-      - open-webui-data:/app/backend/data
-    depends_on:
-      - fastapi-backend
     networks:
       - vigilant-net
     restart: always
@@ -66,6 +52,5 @@ networks:
     driver: bridge
 
 volumes:
-  pgdata:
   ollama-models:
-  open-webui-data:
+  hermes-data:

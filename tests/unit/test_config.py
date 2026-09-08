@@ -1,5 +1,3 @@
-"""Unit tests for vigilant.config.Settings."""
-
 import pytest
 
 from vigilant.config import Settings

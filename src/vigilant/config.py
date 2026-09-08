@@ -10,7 +10,8 @@ class Settings(BaseSettings):
     # Database (PostgreSQL + pgvector)
     # database_url: str = "postgresql+asyncpg://vigilant:vigilant_pass@localhost:5432/vigilant_db"
 
-    # LLM / Ollama integration
+    hermes_base_url: str = "http://localhost:8642/v1"
+    hermes_api_key: str = "change-me"
     ollama_base_url: str = "http://localhost:11434"
     default_llm_model: str = "llama3.1"
 

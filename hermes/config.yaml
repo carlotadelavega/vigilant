@@ -1,0 +1,9 @@
+model:
+  default: "qwen2.5"
+  provider: "custom"
+  base_url: "http://ollama:11434/v1"
+
+mcp_servers:
+  vigilant-network:
+    url: "http://vigilant-backend:8000/mcp"
+    transport: streamable-http

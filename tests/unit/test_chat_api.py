@@ -1,147 +1,96 @@
-"""Unit tests for vigilant.api.v1.chat endpoints."""
+from typing import Any
 
-from collections.abc import AsyncGenerator
-from types import TracebackType
-from typing import Any, Self
-
-import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 from vigilant.api.v1 import chat as chat_module
-from vigilant.config import settings
 
 
-class _FakeResponse:
-    """Minimal stand-in for an httpx.Response used by list_models."""
+def test_models_falls_back_when_hermes_unreachable(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """GET /v1/models should degrade to a single fallback entry if Hermes is down."""
 
-    def __init__(self, status_code: int, payload: dict[str, Any]) -> None:
-        self.status_code = status_code
-        self._payload = payload
+    async def raise_connection_error() -> list[dict[str, Any]]:
+        raise ConnectionError("hermes unreachable")
 
-    def json(self) -> dict[str, Any]:
-        return self._payload
-
-
-class _FakeAsyncClient:
-    """Stand-in for httpx.AsyncClient supporting async context manager usage."""
-
-    def __init__(self, response: _FakeResponse | None = None, raise_error: bool = False) -> None:
-        self._response = response
-        self._raise_error = raise_error
-
-    async def __aenter__(self) -> Self:
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
-    ) -> None:
-        return None
-
-    async def get(self, url: str) -> _FakeResponse:
-        if self._raise_error:
-            raise httpx.RequestError("connection refused", request=httpx.Request("GET", url))
-        assert self._response is not None
-        return self._response
-
-
-class _FakeLLMService:
-    """Stand-in for LLMService used to test streaming without a real Ollama instance."""
-
-    def __init__(self, tokens: list[str]) -> None:
-        self._tokens = tokens
-        self.last_model: str | None = None
-
-    async def generate_stream(self, prompt: str, model: str | None = None) -> AsyncGenerator[str, None]:
-        self.last_model = model
-        for token in self._tokens:
-            yield token
-
-
-def test_list_models_success(monkeypatch: pytest.MonkeyPatch, client: TestClient) -> None:
-    """GET /v1/models should return models reported by a healthy Ollama instance."""
-    fake_response = _FakeResponse(200, {"models": [{"name": "llama3.1"}, {"name": "mistral"}]})
-    monkeypatch.setattr(chat_module.httpx, "AsyncClient", lambda: _FakeAsyncClient(response=fake_response))
+    monkeypatch.setattr(chat_module.hermes_client, "list_models", raise_connection_error)
 
     response = client.get("/v1/models")
 
     assert response.status_code == 200
     body = response.json()
-    assert body["object"] == "list"
-    assert {model["id"] for model in body["data"]} == {"llama3.1", "mistral"}
-
-
-def test_list_models_falls_back_when_ollama_unreachable(monkeypatch: pytest.MonkeyPatch, client: TestClient) -> None:
-    """GET /v1/models should fall back to the default model when Ollama is unreachable."""
-    monkeypatch.setattr(chat_module.httpx, "AsyncClient", lambda: _FakeAsyncClient(raise_error=True))
-
-    response = client.get("/v1/models")
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["data"][0]["id"] == settings.default_llm_model
     assert body["data"][0]["owned_by"] == "vigilant-fallback"
 
 
-def test_list_models_raises_502_on_non_200_from_ollama(monkeypatch: pytest.MonkeyPatch, client: TestClient) -> None:
-    """GET /v1/models should surface a 502 when Ollama responds with a non-200 status."""
-    fake_response = _FakeResponse(500, {})
-    monkeypatch.setattr(chat_module.httpx, "AsyncClient", lambda: _FakeAsyncClient(response=fake_response))
+def test_models_returns_hermes_models(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """GET /v1/models should expose model metadata returned by Hermes."""
+
+    async def fake_list_models() -> list[dict[str, Any]]:
+        return [{"id": "hermes-agent", "created": 123}]
+
+    monkeypatch.setattr(chat_module.hermes_client, "list_models", fake_list_models)
 
     response = client.get("/v1/models")
 
-    assert response.status_code == 502
+    assert response.status_code == 200
+    assert response.json()["data"] == [{"id": "hermes-agent", "object": "model", "created": 123, "owned_by": "hermes"}]
 
 
-def test_chat_completions_rejects_empty_messages(client: TestClient) -> None:
-    """POST /v1/chat/completions should reject a request with no messages."""
-    response = client.post(
-        "/v1/chat/completions",
-        json={"model": "llama3.1", "messages": [], "stream": False},
-    )
+def test_chat_completions_requires_messages(client: TestClient) -> None:
+    """POST /v1/chat/completions should reject an empty messages list."""
+    response = client.post("/v1/chat/completions", json={"model": "hermes-agent", "messages": []})
 
     assert response.status_code == 400
 
 
-def test_chat_completions_non_streaming_returns_placeholder(client: TestClient) -> None:
-    """POST /v1/chat/completions without streaming should return the static placeholder message."""
+def test_chat_completions_proxies_to_hermes(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """POST /v1/chat/completions should return Hermes's completion payload verbatim."""
+
+    async def fake_chat_completion(messages: list[dict[str, str]], model: str) -> dict[str, Any]:
+        return {"id": "chatcmpl-test", "model": model, "choices": []}
+
+    monkeypatch.setattr(chat_module.hermes_client, "chat_completion", fake_chat_completion)
+
     response = client.post(
         "/v1/chat/completions",
-        json={
-            "model": "llama3.1",
-            "messages": [{"role": "user", "content": "hola"}],
-            "stream": False,
-        },
+        json={"model": "hermes-agent", "messages": [{"role": "user", "content": "hi"}]},
     )
 
     assert response.status_code == 200
-    body = response.json()
-    assert body["choices"][0]["message"]["content"] == "[VIGILANT]: Please enable streaming in Open WebUI."
-    assert body["model"] == "llama3.1"
+    assert response.json()["id"] == "chatcmpl-test"
 
 
-def test_chat_completions_streaming_forwards_model_and_tokens(
-    monkeypatch: pytest.MonkeyPatch, client: TestClient
-) -> None:
-    """POST /v1/chat/completions with streaming should forward tokens and the requested model."""
-    fake_service = _FakeLLMService(tokens=["Hola", " mundo"])
-    monkeypatch.setattr(chat_module, "llm_service", fake_service)
+def test_chat_completions_returns_502_when_hermes_fails(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """POST /v1/chat/completions should surface a clean 502 if Hermes errors out."""
 
-    with client.stream(
-        "POST",
+    async def raise_error(messages: list[dict[str, str]], model: str) -> dict[str, Any]:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(chat_module.hermes_client, "chat_completion", raise_error)
+
+    response = client.post(
         "/v1/chat/completions",
-        json={
-            "model": "mistral",
-            "messages": [{"role": "user", "content": "hola"}],
-            "stream": True,
-        },
-    ) as response:
-        assert response.status_code == 200
-        body = "".join(response.iter_text())
+        json={"model": "hermes-agent", "messages": [{"role": "user", "content": "hi"}]},
+    )
 
-    assert "Hola" in body
-    assert "data: [DONE]" in body
-    assert fake_service.last_model == "mistral"
+    assert response.status_code == 502
+
+
+def test_chat_completions_streams_sse(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Streaming requests should relay Hermes chunks as OpenAI-compatible SSE."""
+
+    async def fake_stream(messages: list[dict[str, str]], model: str) -> Any:
+        yield {"id": "chunk", "model": model, "messages": messages}
+
+    monkeypatch.setattr(chat_module.hermes_client, "chat_completion_stream", fake_stream)
+
+    response = client.post(
+        "/v1/chat/completions",
+        json={"model": "hermes-agent", "stream": True, "messages": [{"role": "user", "content": "hi"}]},
+    )
+
+    assert response.status_code == 200
+    assert response.text == (
+        'data: {"id": "chunk", "model": "hermes-agent", '
+        '"messages": [{"role": "user", "content": "hi"}]}\n\n'
+        "data: [DONE]\n\n"
+    )
