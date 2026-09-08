@@ -23,7 +23,7 @@ services:
       - API_SERVER_KEY=${HERMES_API_SERVER_KEY:-change-me}
     volumes:
       - hermes-data:/opt/data
-      - ./hermes/config.yaml:/opt/data/config.yaml:ro
+      - ./hermes/config.yaml:/opt/data/config.yaml
     depends_on:
       - ollama
       - vigilant-backend

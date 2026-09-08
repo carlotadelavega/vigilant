@@ -17,13 +17,8 @@ services:
       - OPENAI_API_BASE_URL=http://vigilant-backend:8000/v1
       - OPENAI_API_KEY=not-needed
       - ENABLE_OLLAMA_API=false
-    volumes:
-      - open-webui-data:/app/backend/data
     depends_on:
       - vigilant-backend
     networks:
       - vigilant-net
     restart: always
-
-volumes:
-  open-webui-data:

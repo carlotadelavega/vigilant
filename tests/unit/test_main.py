@@ -25,7 +25,8 @@ def test_api_router_is_mounted(client: TestClient) -> None:
 
 
 def test_mcp_server_is_mounted(client: TestClient) -> None:
-    """The MCP streamable-http app should be reachable under /mcp once mounted on app."""
-    response = client.get("/mcp")
+    """The MCP health endpoint should confirm the streamable-http app is mounted."""
+    response = client.get("/mcp/health")
 
-    assert response.status_code != 404
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}

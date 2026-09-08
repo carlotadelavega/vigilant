@@ -12,7 +12,7 @@ class Settings(BaseSettings):
 
     hermes_base_url: str = "http://localhost:8642/v1"
     hermes_api_key: str = "change-me"
-    default_llm_model: str = "llama3.1"
+    default_llm_model: str = "qwen2.5:7b"
 
     model_config = SettingsConfigDict(
         env_file=".env",
