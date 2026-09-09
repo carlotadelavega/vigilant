@@ -2,10 +2,24 @@ services:
   ollama:
     image: ollama/ollama:latest
     container_name: vigilant-ollama
+    runtime: nvidia
     ports:
       - "11435:11434"
     volumes:
       - ollama-models:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+      - OLLAMA_FLASH_ATTENTION=1
+      - OLLAMA_KV_CACHE_TYPE=q8_0
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     networks:
       - vigilant-net
     restart: always
