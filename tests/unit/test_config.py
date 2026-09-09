@@ -9,7 +9,7 @@ def test_settings_defaults() -> None:
 
     assert settings.project_name == "VIGILANT"
     assert settings.api_v1_prefix == "/v1"
-    assert settings.default_llm_model == "qwen2.5:7b"
+    assert settings.default_llm_model == "qwen3.5:latest"
 
 
 def test_settings_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
