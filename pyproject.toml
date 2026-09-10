@@ -15,6 +15,7 @@ dependencies = [
     "pydantic-settings>=2.6.0",
     "httpx>=0.28.0",
     "mcp[cli]>=1.9.0,<2",
+    "scapy>=2.7.0",
 ]
 
 [project.scripts]

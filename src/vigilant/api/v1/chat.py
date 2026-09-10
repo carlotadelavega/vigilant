@@ -3,12 +3,13 @@ import time
 from collections.abc import AsyncGenerator
 from typing import Literal
 
+import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from vigilant.config import settings
-from vigilant.services.hermes_client import HermesClient
+from vigilant.services.hermes_client import HermesClient, HermesClientError
 
 router = APIRouter()
 hermes_client = HermesClient()
@@ -60,7 +61,7 @@ async def list_models() -> ModelList:
                 for model in hermes_models
             ]
         )
-    except Exception:  # noqa: BLE001 - Hermes unavailable falls back to a single default entry.
+    except (httpx.HTTPError, HermesClientError):  # noqa: BLE001 - Hermes unavailable falls back to a single default entry.
         return ModelList(
             data=[
                 ModelInfo(

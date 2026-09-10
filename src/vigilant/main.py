@@ -6,10 +6,13 @@ from fastapi import FastAPI
 from vigilant.api.router import api_router
 from vigilant.config import settings
 from vigilant.mcp.server import mcp
+from vigilant.services.hermes_client import HermesClient
 
 mcp.settings.streamable_http_path = "/"
 if mcp.settings.transport_security is not None:
     mcp.settings.transport_security.allowed_hosts.append("vigilant-backend:8000")
+
+hermes_client = HermesClient()
 
 
 def _mcp_session_manager_started() -> bool:
@@ -30,6 +33,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
     async with mcp.session_manager.run():
         yield
+
+    await hermes_client.close()
 
 
 app = FastAPI(title=settings.project_name, lifespan=lifespan)
