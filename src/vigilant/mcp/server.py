@@ -1,12 +1,6 @@
-"""Minimal Network MCP server (VIG-108).
-
-Exposes VIGILANT's network-related tools over MCP for consumption by both
-Hermes (at reasoning time) and FastAPI's own MCPClient (for direct calls).
-For the MVP this ships a single placeholder tool; real network tools
-(topology lookup, asset inventory, etc.) land here per the target architecture.
-"""
-
 from mcp.server.fastmcp import FastMCP
+
+from vigilant.mcp.tools.analyze_pcap import ActorAnalysis, analyze_actors
 
 mcp = FastMCP("vigilant-network")
 
@@ -17,11 +11,10 @@ async def ping() -> str:
     return "pong"
 
 
-# Future network tools, per the target architecture:
-# @mcp.tool()
-# async def get_network_topology() -> dict[str, Any]: ...
-# @mcp.tool()
-# async def list_assets(subnet: str | None = None) -> list[dict[str, Any]]: ...
+@mcp.tool()
+async def analyze_pcap_file(pcap_path: str, top_n: int = 10, verbose: bool = True) -> ActorAnalysis:
+    """Analyze a network traffic log file for suspicious activities."""
+    return await analyze_actors(pcap_path, top_n, verbose)
 
 
 def main() -> None:
