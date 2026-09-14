@@ -52,6 +52,8 @@ services:
       - "8000:8000"
     volumes:
       - ./src:/app/src
+      - vigilant-data:/var/lib/vigilant
+      - open-webui-data:/var/lib/open-webui/data:ro
     environment:
       - HERMES_BASE_URL=http://hermes:8642/v1
       - HERMES_API_KEY=${HERMES_API_SERVER_KEY:-change-me}
@@ -68,3 +70,5 @@ networks:
 volumes:
   ollama-models:
   hermes-data:
+  vigilant-data:
+  open-webui-data:

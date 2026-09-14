@@ -40,7 +40,7 @@ class HermesClient:
         data: dict[str, Any] = response.json()
         return cast(list[dict[str, Any]], data.get("data", []))
 
-    async def chat_completion(self, messages: list[dict[str, str]], model: str) -> dict[str, Any]:
+    async def chat_completion(self, messages: list[dict[str, Any]], model: str) -> dict[str, Any]:
         """Send a non-streaming chat completion request to Hermes.
 
         Args:
@@ -57,7 +57,7 @@ class HermesClient:
         return result
 
     async def chat_completion_stream(
-        self, messages: list[dict[str, str]], model: str
+        self, messages: list[dict[str, Any]], model: str
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Stream a chat completion from Hermes, yielding decoded SSE chunk payloads.
 

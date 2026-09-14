@@ -1,9 +1,3 @@
-"""
-Main-actor analyzer for network captures (.pcap / .pcapng)
-
-Requires: pip install scapy --break-system-packages
-"""
-
 from __future__ import annotations
 
 from collections import Counter, defaultdict
@@ -41,28 +35,25 @@ async def analyze_actors(pcap_path: str, top_n: int = 10, verbose: bool = True) 
     ip_counter: Counter[str] = Counter()
     conversations: Counter[tuple[str, str]] = Counter()
     protocols: Counter[str] = Counter()
-    mac_to_ip: defaultdict[str, set[str]] = defaultdict(set)  # IPs each MAC announces (via ARP)
-    ip_to_mac: defaultdict[str, set[str]] = defaultdict(set)  # MACs associated with each IP
+    mac_to_ip: defaultdict[str, set[str]] = defaultdict(set)
+    ip_to_mac: defaultdict[str, set[str]] = defaultdict(set)
 
     for pkt in packets:
-        # --- Ethernet layer: MACs ---
         if pkt.haslayer(Ether):
             eth = cast(Ether, pkt.getlayer(Ether))
             mac_counter[eth.src] += 1
             mac_counter[eth.dst] += 1
 
-        # --- ARP: who claims to be whom ---
         if pkt.haslayer(ARP):
             arp = cast(ARP, pkt.getlayer(ARP))
             protocols["ARP"] += 1
-            if arp.op == 2:  # is-at (reply)
+            if arp.op == 2:
                 mac_to_ip[arp.hwsrc].add(arp.psrc)
                 ip_to_mac[arp.psrc].add(arp.hwsrc)
             ip_counter[arp.psrc] += 1
             if arp.pdst != "0.0.0.0":
                 ip_counter[arp.pdst] += 1
 
-        # --- IPv4 ---
         elif pkt.haslayer(IP):
             ip = cast(IP, pkt.getlayer(IP))
             ip_counter[ip.src] += 1
@@ -73,7 +64,6 @@ async def analyze_actors(pcap_path: str, top_n: int = 10, verbose: bool = True) 
             else:
                 protocols["IPv4 (other)"] += 1
 
-        # --- IPv6 ---
         elif pkt.haslayer(IPv6):
             ip6 = cast(IPv6, pkt.getlayer(IPv6))
             ip_counter[ip6.src] += 1
@@ -96,26 +86,26 @@ async def analyze_actors(pcap_path: str, top_n: int = 10, verbose: bool = True) 
     }
 
     if verbose:
-        print(f"📦 Total packets: {result['total_packets']}\n")
+        print(f"Total packets: {result['total_packets']}\n")
 
-        print("🔌 Protocols detected:")
+        print("Protocols detected:")
         for proto, n in result["protocols"]:
             print(f"   {proto}: {n}")
 
-        print("\n🖥️  Most active MACs:")
+        print("\nMost active MACs:")
         for mac, n in result["top_macs"]:
             print(f"   {mac}: {n} packets")
 
-        print("\n🌐 Most active IPs:")
+        print("\nMost active IPs:")
         for ip_addr, n in result["top_ips"]:
             print(f"   {ip_addr}: {n} packets")
 
-        print("\n💬 Most frequent conversations (source -> destination):")
+        print("\nMost frequent conversations (source -> destination):")
         for (src, dst), n in result["top_conversations"]:
             print(f"   {src} -> {dst}: {n} packets")
 
         if result["ip_mac_relations"]:
-            print("\n🔗 IP <-> MAC relationship (from ARP):")
+            print("\nIP <-> MAC relationship (from ARP):")
             for ip_addr, macs in result["ip_mac_relations"].items():
                 flag = " ⚠️ multiple MACs (possible spoofing)" if len(macs) > 1 else ""
                 print(f"   {ip_addr} -> {', '.join(macs)}{flag}")
